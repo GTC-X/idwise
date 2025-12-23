@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IDWise Sandbox – Dummy Verification (EU)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- IDWise Web SDK -->
+  <link rel="stylesheet"
+        href="https://releases.idwise.com/websdk/latest/idwise.min.css">
+  <script src="https://releases.idwise.com/websdk/latest/idwise.min.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .row { display:flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    select, input, button { padding: 10px 12px; }
+    button { cursor: pointer; }
+    #idwise-container { margin-top: 18px; min-height: 650px; border: 1px solid #ddd; border-radius: 10px; }
+    pre { background:#f7f7f7; padding: 10px; border-radius: 8px; max-height: 240px; overflow: auto; }
+    label { font-weight: 600; }
+  </style>
+</head>
+
+<body>
+  <h2>IDWise Sandbox – Dummy ID Verification (EU)</h2>
+  <p>Pick document type, then Start. No signup. Sandbox only.</p>
+
+  <div class="row">
+    <label for="docType">Document Type:</label>
+    <select id="docType">
+      <option value="ID">National ID</option>
+      <option value="PASSPORT">Passport</option>
+    </select>
+
+    <label for="referenceNo">Reference No:</label>
+    <input id="referenceNo" placeholder="Optional, e.g. TEST_123" />
+
+    <button id="startBtn">Start Verification</button>
+    <button id="cleanupBtn">Cleanup</button>
+  </div>
+
+  <div id="idwise-container"></div>
+
+  <h3>Events</h3>
+  <pre id="log">Waiting…</pre>
+
+<script>
+  /* ===============================
+     FLOW IDS
+  ================================ */
+  const FLOW_CHINA_ID = "b8fe4cdc-e756-48b5-a1cf-4700c5da3162";
+  const FLOW_CHINA_PASSPORT = "b6a0da44-4e15-40d9-9370-75aea6c6f38f";
+
+  function pickFlowByDocType(docType) {
+    // If ID => ID Flow, else Passport => Passport Flow
+    return (docType === "ID") ? FLOW_CHINA_ID : FLOW_CHINA_PASSPORT;
+  }
+
+  let idwiseInstance = null;
+  const logBox = document.getElementById("log");
+
+  function log(msg, data) {
+    logBox.textContent =
+      `[${new Date().toISOString()}] ${msg}\n` +
+      (data ? JSON.stringify(data, null, 2) : "") +
+      "\n\n" + logBox.textContent;
+  }
+
+  function getRef() {
+    const v = document.getElementById("referenceNo").value.trim();
+    return v || ("DUMMY_" + Date.now());
+  }
+
+  async function getClientToken() {
+    const res = await fetch("/api/idwise/client-token");
+    const json = await res.json();
+    if (!json.ok) throw json;
+    return json.token;
+  }
+
+  async function initIDWise() {
+    if (idwiseInstance) return idwiseInstance;
+
+    const token = await getClientToken();
+    log("Client token received (masked)", token.slice(0, 6) + "..." + token.slice(-6));
+
+    idwiseInstance = await IDWise.initialize({
+      clientKey: token,
+      locale: "en"
+    });
+
+    log("IDWise initialized");
+    return idwiseInstance;
+  }
+
+  async function startVerification() {
+    const docType = document.getElementById("docType").value; // "ID" | "PASSPORT"
+    const flowId = pickFlowByDocType(docType);
+    const ref = getRef();
+
+    const sdk = await initIDWise();
+
+    log("Starting journey", { docType, flowId, referenceNo: ref });
+
+    sdk.startJourney({
+      flowId,
+      mount: "#idwise-container",
+      referenceNo: ref,
+      eventHandlers: {
+        onJourneyStarted: d => log("Journey started", d),
+        onJourneyFinished: d => log("Journey finished", d),
+        onJourneyCancelled: d => log("Journey cancelled", d),
+        onError: d => log("SDK error", d)
+      }
+    });
+  }
+
+  async function cleanup() {
+    if (!idwiseInstance) return log("Nothing to cleanup.");
+    try {
+      await idwiseInstance.cleanup();
+      log("SDK cleaned up");
+    } catch (e) {
+      log("cleanup() error", String(e));
+    }
+  }
+
+  document.getElementById("startBtn").onclick = startVerification;
+  document.getElementById("cleanupBtn").onclick = cleanup;
+</script>
+
+</body>
+</html>
